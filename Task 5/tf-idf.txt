@@ -1,0 +1,173 @@
+----- tf-idf ----------------
+
+pig_qr = LOAD '/merged_qr_1.csv' USING org.apache.pig.piggybank.storage.CSVExcelStorage(',','YES_MULTILINE','NOCHANGE','SKIP_INPUT_HEADER')
+	AS (id: int,  posttypeid: int,  acceptedanswerid: int,  parentid: int,  creationdate: Datetime, 
+	deletiondate: Datetime,  score: int,  viewcount: int,  body: chararray,  owneruserid: int,  
+	ownerdisplayname: chararray,  lasteditoruserid: int,  lasteditordisplayname: chararray,  lasteditdate: Datetime,  
+	lastactivitydate: Datetime,  title: chararray,  tags: chararray,  answercount: int,  commentcount: int,  
+	favoritecount: int,  closeddate: Datetime,  communityowneddate: Datetime,  contentlicense: chararray);
+
+
+pig_qr_clean_rep = FOREACH pig_qr GENERATE id, score, owneruserid, REPLACE(REPLACE(REPLACE(REPLACE(REPLACE((REPLACE(body,'[\r\n]+','')),'<[^>]*>' , ' '),'[^a-zA-Z\\s\']+',' '),'(?=\\S*[\'])([azA-Z\'-]+)',''),'(?<![\\w\\-])\\w(?![\\w\\-])',''),'[ ]{2,}',' ') AS body;
+
+pig_qr_clean_rep1 = FILTER pig_qr_clean_rep BY (owneruserid is not null);
+
+pig_qr_clean_rep2 = GROUP pig_qr_clean_rep1 BY owneruserid;
+
+pig_qr_clean_rep3 = FOREACH pig_qr_clean_rep2 GENERATE group AS userid, SUM(pig_qr_clean_rep1.score) AS maxscore;
+
+pig_qr_clean_rep4 = ORDER pig_qr_clean_rep3 BY maxscore DESC;
+
+pig_qr_clean_rep5 = LIMIT pig_qr_clean_rep4 10;
+
+pig_qr_clean_rep6 = FOREACH pig_qr_clean_rep5 GENERATE userid;
+
+pig_qr_clean_rep7 = JOIN pig_qr_clean_rep1 BY owneruserid, pig_qr_clean_rep6 BY userid;
+
+pig_qr_clean_rep8 = FOREACH pig_qr_clean_rep7 GENERATE pig_qr_clean_rep1::owneruserid, LOWER(TRIM(REPLACE(pig_qr_clean_rep1::body,'[ ]{2,}',' '))) AS pig_qr_clean_rep1::body;
+
+hdfs dfs -mkdir /outputtfidf --- not needed
+
+STORE pig_qr_clean_rep8 INTO '/outputtfidf_org' USING org.apache.pig.piggybank.storage.CSVExcelStorage(',','NO_MULTILINE','NOCHANGE','SKIP_OUTPUT_HEADER');
+
+hdfs dfs -ls /outputtfidf_org
+
+-------
+mapper and reducer classes in python code
+-------
+empty mapper and reducer python files in gcp
+
+---------
+touch mapper.py
+vim mapper.py
+---------
+#!/usr/bin/env python
+"""mapper.py"""
+
+import sys
+
+# input comes from STDIN (standard input)
+for line in sys.stdin:
+    # remove leading and trailing whitespace
+    line = line.strip()
+    # split the line into words
+    words = line.split()
+    # increase counters
+    for word in words:
+        # write the results to STDOUT (standard output);
+        # what we output here will be the input for the
+        # Reduce step, i.e. the input for reducer.py
+        #
+        # tab-delimited; the trivial word count is 1
+        print '%s\t%s' % (word, 1)
+
+-- another mapper1.py--
+#!/usr/bin/env python
+import sys
+import os
+def tfmapper():
+  for line in sys.stdin:
+    words = line.strip().split()
+    for word in words:
+      print "%s\t%s\t1" % (word,os.getenv('mapreduce_map_input_file','noname'))
+if __name__ == '__main__':
+  tfmapper()
+
+-- to save: SHIFT + :w and to quit :q--
+
+----------
+touch reducer.py
+vim reducer.py
+----------
+#!/usr/bin/env python
+"""reducer.py"""
+
+from operator import itemgetter
+import sys
+
+current_word = None
+current_count = 0
+word = None
+
+# input comes from STDIN
+for line in sys.stdin:
+    # remove leading and trailing whitespace
+    line = line.strip()
+
+    # parse the input we got from mapper.py
+    word, count = line.split('\t', 1)
+
+    # convert count (currently a string) to int
+    try:
+        count = int(count)
+    except ValueError:
+        # count was not a number, so silently
+        # ignore/discard this line
+        continue
+
+    # this IF-switch only works because Hadoop sorts map output
+    # by key (here: word) before it is passed to the reducer
+    if current_word == word:
+        current_count += count
+    else:
+        if current_word:
+            # write result to STDOUT
+            print '%s\t%s' % (current_word, current_count)
+        current_count = count
+        current_word = word
+
+# do not forget to output the last word if needed!
+if current_word == word:
+    print '%s\t%s' % (current_word, current_count)
+
+-- another reducer.py --
+#!/usr/bin/env python
+import sys
+def tfreducer():
+  curprefix = None
+  curcount = None
+  for line in sys.stdin:
+    word,filename,count = line.strip().split('\t')
+    prefix = '%s\t%s' % (word,filename)
+    if curprefix == None:
+      curprefix = prefix
+      curcount = eval(count)
+    elif curprefix == prefix:
+      curcount += eval(count)
+    else:
+      print "%s\t%s" % (curprefix,curcount)
+      curprefix = prefix
+      curcount = eval(count)
+  print "%s\t%s" % (curprefix,curcount)
+if __name__=='__main__':
+  tfreducer()
+
+
+
+----
+test mapper and reducer
+----
+echo "foo foo quux labs foo bar quux" | /home/hemant_singh5/mapper1.py
+sudo echo "foo foo quux labs foo bar quux" | /home/hemant_singh5/mapper1.py (if failed above line)
+
+hdfs dfs -cat /outputtfidf_org/part-r-00000
+
+-------------------------------------------------
+
+hadoop jar '/usr/lib/hadoop-mapreduce/hadoop-streaming.jar' -input '/outputtfidf_org/part-r-00000' -output '/hemant-1' -file *.py -mapper MapperPhaseOne.py -reducer ReducerPhaseOne.py
+
+hadoop jar '/usr/lib/hadoop-mapreduce/hadoop-streaming.jar' -input '/hemant-1' -output '/hemant-2' -file *.py -mapper MapperPhaseTwo.py -reducer ReducerPhaseTwo.py
+
+hadoop jar '/usr/lib/hadoop-mapreduce/hadoop-streaming.jar' -input '/hemant-2' -output '/hemant-3' -file *.py -mapper MapperPhaseThree.py -reducer ReducerPhaseThree.py
+
+hadoop fs -cat /hemant-3/par*
+
+---------------------------------------------------
+Tables
+---------------------------------------------------
+
+CREATE TABLE qr_top10 (word string, userId int, tfidf double) row format delimited fields terminated by '\t' stored as textfile;
+load data inpath '/hemant-3/par*' into table qr_top10;
+load data inpath '/hemant-3/part-r-00000' into qr_top10;
+SELECT * FROM (SELECT userId,tfidf,word, rank() over (PARTITION BY userId ORDER BY tfidf DESC) as rank FROM qr_top10 DISTRIBUTE BY userId SORT BY userId desc) a WHERE rank < 10 ORDER BY userId, rank;
+SELECT * FROM (SELECT userId,tfidf,word, rank() over (PARTITION BY userId ORDER BY tfidf DESC) as rank FROM qr_top10 DISTRIBUTE BY userId SORT BY userId desc) a WHERE rank >1 ORDER BY userId, rank;

@@ -1,0 +1,133 @@
+Hive Installation
+----------------------
+su hduser
+
+
+sudo wget https://mirrors.estointernet.in/apache/hive/hive-3.1.2/apache-hive-3.1.2-bin.tar.gz
+
+sudo tar xvzf apache-hive-3.1.2-bin.tar.gz -C /usr/local
+
+
+sudo vim ~/.bashrc
+export HIVE_HOME=/usr/local/apache-hive-3.1.2-bin
+export HIVE_CONF_DIR=/usr/local/apache-hive-3.1.2-bin/conf
+export PATH=$HIVE_HOME/bin:$PATH
+export CLASSPATH=$CLASSPATH:/usr/local/hadoop/lib/*:.
+export CLASSPATH=$CLASSPATH:/usr/local/apache-hive-3.1.2-bin/lib/*:.
+
+
+
+source ~/.bashrc
+
+
+echo $HADOOP_INSTALL
+
+
+start-all.sh
+jps
+hdfs dfs -ls /
+
+
+hdfs dfs -mkdir -p /user/hive/warehouse
+hdfs dfs -mkdir -p /tmp
+
+
+hdfs dfs -chmod g+w /tmp
+hdfs dfs -chmod g+w /user/hive/warehouse
+
+
+hdfs dfs -ls /
+
+cd $HIVE_HOME/conf
+
+
+sudo cp hive-env.sh.template hive-env.sh
+
+sudo vim hive-env.sh
+
+
+export HADOOP_INSTALL=/usr/local/hadoop/
+
+
+cd /tmp
+
+
+sudo wget http://archive.apache.org/dist/db/derby/db-derby-10.13.1.1/db-derby-10.13.1.1-bin.tar.gz
+
+sudo tar xvzf db-derby-10.13.1.1-bin.tar.gz -C /usr/local
+cd ..
+
+
+sudo vim ~/.bashrc
+export DERBY_HOME=/usr/local/db-derby-10.13.1.1-bin
+export PATH=$PATH:$DERBY_HOME/bin
+export CLASSPATH=$CLASSPATH:$DERBY_HOME/lib/derby.jar:$DERBY_HOME/lib/derbytools.jar
+
+
+source ~/.bashrc
+
+
+sudo mkdir $DERBY_HOME/data
+
+
+cd $HIVE_HOME/conf
+sudo cp hive-default.xml.template hive-site.xml
+
+
+sudo vim hive-site.xml
+
+<property>
+<name>javax.jdo.option.ConnectionURL</name>
+<value>jdbc:derby:;databaseName=metastore_db;create=true</value>
+<description>
+JDBC connect string for a JDBC metastore.
+To use SSL to encrypt/authenticate the connection, provide database-specific SSL flag in the connection URL.
+For example, jdbc:postgresql://myhost/db?ssl=true for postgres database.
+</description>
+</property>
+
+
+
+
+cd /usr/local/
+sudo chown -R hduser:hadoop apache-hive-3.1.2-bin
+
+
+
+
+cd apache-hive-3.1.2-bin/bin
+schematool -dbType derby -initSchema
+
+
+echo $HIVE_HOME
+$HIVE_HOME/bin/hive
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

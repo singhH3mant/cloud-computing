@@ -1,0 +1,8 @@
+CREATE DATABASE Task;
+USE Task;
+
+
+CREATE external TABLE IF not exists stackexchange (id int, score int, viewcount int, owneruserid int, title string, tags string, body string) ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde' WITH SERDEPROPERTIES ("separatorChar"= ",", "quoteChar" = "\"") LOCATION'/home/hemant_singh5/test.csv'tblproperties("skip.header.line.count"="1");
+Load data local inpath '/home/hemant_singh5/test.csv' overwrite into table stackexchange;
+CREATE TABLE spam AS select id, score, viewcount, owneruserid, title, tags, body from stackexchange where (LOWER (body) LIKE '%function%' OR LOWER (body) LIKE '%compare%' OR LOWER(body) LIKE '%wanted%' OR LOWER(body) LIKE '%handle%' OR LOWER(body) LIKE '%is%') AND score  < 5000;
+CREATE TABLE ham AS select id, score, viewcount, owneruserid, title, tags, body from stackexchange where id not in (select id from spam) AND score in (3410, 2657, 3588);

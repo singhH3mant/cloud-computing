@@ -1,0 +1,44 @@
+--------
+in hdfs
+--------
+
+cat QR1.csv <(tail +2 QR2.csv) <(tail +2 QR3.csv) <(tail +2 QR4.csv) > merged_qr_1.csv
+
+
+--------------------
+pig
+--------------------
+
+
+
+Content Picking
+--------------------
+
+pig_qr = LOAD '/merged_qr_1.csv' USING org.apache.pig.piggybank.storage.CSVExcelStorage(',','YES_MULTILINE','NOCHANGE','SKIP_INPUT_HEADER')
+	AS (id: int,  posttypeid: int,  acceptedanswerid: int,  parentid: int,  creationdate: Datetime, 
+	deletiondate: Datetime,  score: int,  viewcount: int,  body: chararray,  owneruserid: int,  
+	ownerdisplayname: chararray,  lasteditoruserid: int,  lasteditordisplayname: chararray,  lasteditdate: Datetime,  
+	lastactivitydate: Datetime,  title: chararray,  tags: chararray,  answercount: int,  commentcount: int,  
+	favoritecount: int,  closeddate: Datetime,  communityowneddate: Datetime,  contentlicense: chararray);
+
+
+pig_grp1 = GROUP pig_qr ALL;
+pig_grp2 = FOREACH pig_grp1 GENERATE COUNT(pig_qr.id);
+DUMP pig_grp2;
+
+--------
+cleaning in pig
+--------
+
+pig_qr_clean_lines = FOREACH pig_qr GENERATE id, score, viewcount, owneruserid, title, tags, (REPLACE(body,'[\r\n]+',' ')) AS body;
+DUMP pig_qr_clean_lines;
+
+B = FOREACH pig_qr GENERATE id, score, viewcount, owneruserid, title, tags, (REPLACE(REPLACE(REPLACE(REPLACE(body,'\\n',''),'\\r',''),'\\r\\n',''),'<br>','')) AS body;
+DUMP B;
+
+------
+to check if the clean 1 for the removing the new lines has been performed
+------
+
+qr_limit= LIMIT B 1;
+DUMP qr_limit;
